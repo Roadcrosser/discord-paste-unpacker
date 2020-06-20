@@ -1,0 +1,6 @@
+{
+    "token": "abalabahaha",
+    "prefix": "!",
+    "normal_user_charlimit": 5000,
+    "manage_message_user_charlimit": 10000
+}
