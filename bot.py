@@ -119,10 +119,11 @@ async def unpack_github(match):
 
 
 txt_url_regexes = [
-    (re.compile(r"^https?://gist\.github\.com\/.+\/([a-f0-9]+)$"), unpack_gist),
-    (re.compile(r"^(https?://(?:h|p)astebin\.com\/)(\w+)$"), unpack_pastebin),
-    (re.compile(r"https?:\/\/github\.com\/(.+\/.+)\/blob(\/.+\/.+)"), unpack_github),
-    (re.compile(r"^(https?://.+\.txt)$"), unpack_url_file),
+    (re.compile(r"^https?:\/\/gist\.github\.com\/.+\/([a-f0-9]+)$"), unpack_gist),
+    (re.compile(r"^(https?:\/\/(?:h|p)astebin\.com\/)(\w+)$"), unpack_pastebin),
+    (re.compile(r"^(https?:\/\/(?:h|p)astebin\.com\/raw\/\w+)$"), unpack_url_file),
+    (re.compile(r"^https?:\/\/github\.com\/(.+\/.+)\/blob(\/.+\/.+)$"), unpack_github),
+    (re.compile(r"^(https?:\/\/.+\.txt)$"), unpack_url_file),
 ]
 
 
