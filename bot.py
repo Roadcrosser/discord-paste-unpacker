@@ -50,6 +50,7 @@ async def on_message(message):
         content_url = content_url.strip("<>")
 
         unpacked_content = None
+        escape_markdown = True
         for reg in txt_url_regexes:
             match = reg[0].match(content_url)
             if match:
@@ -62,7 +63,8 @@ async def on_message(message):
                         ),
                         file=sys.stderr,
                     )
-                    unpacked_content = str(e)
+                    escape_markdown = False
+                    unpacked_content = f"```\n{e}\n```"
                 break
 
         if not unpacked_content:
@@ -72,14 +74,19 @@ async def on_message(message):
         if message.channel.permissions_for(message.author).manage_messages:
             character_limit = config["manage_message_user_charlimit"]
 
-        await send_message(message.channel, unpacked_content, character_limit)
+        unpacked_content = unpacked_content[:character_limit]
+        if escape_markdown:
+            unpacked_content = discord.utils.escape_markdown(unpacked_content)
+        unpacked_content = discord.utils.escape_mentions(unpacked_content)
+
+        await send_message(message.channel, unpacked_content)
 
 
 async def get_url_contents(url):
     async with bot.session.get(url) as r:
         text = await r.text()
         if r.status != 200:
-            raise ValueError(text)
+            raise ValueError(f"Error: {r.status}")
     return text
 
 
@@ -105,26 +112,26 @@ async def unpack_gist(match):
     return content
 
 
+async def unpack_github(match):
+    groups = match.groups()
+    url = f"https://raw.githubusercontent.com/{groups[0]}{groups[1]}"
+    return await get_url_contents(url)
+
+
 txt_url_regexes = [
-    (re.compile(r"^(https?://.+\.txt)$"), unpack_url_file),
     (re.compile(r"^https?://gist\.github\.com\/.+\/([a-f0-9]+)$"), unpack_gist),
     (re.compile(r"^(https?://(?:h|p)astebin\.com\/)(\w+)$"), unpack_pastebin),
+    (re.compile(r"https?:\/\/github\.com\/(.+\/.+)\/blob(\/.+\/.+)"), unpack_github),
+    (re.compile(r"^(https?://.+\.txt)$"), unpack_url_file),
 ]
 
 
-async def send_message(dest, content, charlimit=2000):
-    if content == None:
-        content = "no u"
-    else:
-        content = str(content)
-        content = content[:charlimit]
-        content = discord.utils.escape_markdown(content)
-        content = discord.utils.escape_mentions(content)
+async def send_message(dest, content):
     msg = None
     try:
         if len(content) > 2000:
             await dest.send(content[:2000])
-            msg = await send_message(dest, content[2000:], charlimit)
+            msg = await send_message(dest, content[2000:])
         else:
             msg = await dest.send(content)
     except Exception as e:
