@@ -17,6 +17,30 @@ async def on_ready():
     print(f"Running as {bot.user.name}#{bot.user.discriminator} ({bot.user.id})")
 
 
+def get_url_match(url):
+    for reg in txt_url_regexes:
+        match = reg[0].match(url)
+        if match:
+            return match, reg
+    return None, None
+
+
+async def unpack_content(match, reg):
+    errored = False
+    unpacked_content = None
+    try:
+        unpacked_content = await reg[1](match)
+    except ValueError as e:
+        print(
+            "".join(traceback.TracebackException.from_exception(e).format()),
+            file=sys.stderr,
+        )
+        errored = True
+        unpacked_content = f"```\n{e}\n```"
+
+    return unpacked_content, errored
+
+
 @bot.event
 async def on_message(message):
     if (
@@ -51,29 +75,28 @@ async def on_message(message):
 
         unpacked_content = None
         escape_markdown = True
-        for reg in txt_url_regexes:
-            match = reg[0].match(content_url)
-            if match:
-                try:
-                    unpacked_content = await reg[1](match)
-                except ValueError as e:
-                    print(
-                        "".join(
-                            traceback.TracebackException.from_exception(e).format()
-                        ),
-                        file=sys.stderr,
-                    )
-                    escape_markdown = False
-                    unpacked_content = f"```\n{e}\n```"
-                break
 
-        if not unpacked_content:
-            return
+        match, reg = get_url_match(content_url)
+
+        if match:
+            unpacked_content, errored = await unpack_content(match, reg)
+            escape_markdown = not errored
+        elif content_url.startswith(("http://", "https://")):
+            # This whole bit is for resolving URL shorteners just why
+            resp, text = await get_url_response(content_url)
+            match, reg = get_url_match(str(resp.url))
+            if match:
+                if reg[1] == unpack_url_file:
+                    unpacked_content = text
+                else:
+                    unpacked_content, errored = await unpack_content(match, reg)
+                    escape_markdown = not errored
 
         character_limit = config["normal_user_charlimit"]
         if message.channel.permissions_for(message.author).manage_messages:
             character_limit = config["manage_message_user_charlimit"]
 
+        # Process the message here
         unpacked_content = unpacked_content[:character_limit]
         if escape_markdown:
             unpacked_content = discord.utils.escape_markdown(unpacked_content)
@@ -82,11 +105,17 @@ async def on_message(message):
         await send_message(message.channel, unpacked_content)
 
 
-async def get_url_contents(url):
+async def get_url_response(url):
     async with bot.session.get(url) as r:
+        resp = r
         text = await r.text()
         if r.status != 200:
             raise ValueError(f"Error: {r.status}")
+    return resp, text
+
+
+async def get_url_contents(url):
+    _, text = await get_url_response(url)
     return text
 
 
@@ -119,11 +148,24 @@ async def unpack_github(match):
 
 
 txt_url_regexes = [
-    (re.compile(r"^https?:\/\/gist\.github\.com\/.+\/([a-f0-9]+)$"), unpack_gist),
-    (re.compile(r"^(https?:\/\/(?:h|p)astebin\.com\/)(\w+)$"), unpack_pastebin),
-    (re.compile(r"^(https?:\/\/(?:h|p)astebin\.com\/raw\/\w+)$"), unpack_url_file),
+    (
+        re.compile(r"^https?:\/\/gist\.github\.com\/.+\/([a-f0-9]+)$"),
+        unpack_gist,
+    ),  # gist
+    (
+        re.compile(r"^(https?:\/\/(?:h|p)astebin\.com\/)(\w+)$"),
+        unpack_pastebin,
+    ),  # pastebin
+    (
+        re.compile(r"^(https?:\/\/(?:h|p)astebin\.com\/raw\/\w+)$"),
+        unpack_url_file,
+    ),  # raw pastebin
     (re.compile(r"^https?:\/\/github\.com\/(.+\/.+)\/blob(\/.+\/.+)$"), unpack_github),
-    (re.compile(r"^(https?:\/\/.+\.txt)$"), unpack_url_file),
+    (
+        re.compile(r"^(https?:\/\/raw\.githubusercontent\.com\/.+\/.+\/.+\/.+)$"),
+        unpack_url_file,
+    ),  # raw github
+    (re.compile(r"^(https?:\/\/.+\.txt)$"), unpack_url_file),  # other url file thing
 ]
 
 
